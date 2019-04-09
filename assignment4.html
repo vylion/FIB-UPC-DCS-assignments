@@ -1,0 +1,364 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>DCS - 4</title>
+
+    <!--- Math.js library, for matrix manipulation, and many other things--->
+    <script src=https://cdnjs.cloudflare.com/ajax/libs/mathjs/3.3.0/math.min.js></script>
+</head>
+
+<body>
+
+<h1>DCS - 4. Cubic Hermite interpolation</h1>
+
+<canvas id="canvas1" height="600" width="800" class="bezier"  style="border:1px solid #d3d3d3;"></canvas>
+<br>
+<button type="button" onclick="reset()">Reset</button>
+<button type="button" onClick="doProblem2(4,4)">Do problem 2</button>
+<br>
+<b>Problem 2:</b><br>
+Consider the particular case P0 = (0,0), P1 = (2,1), and tangent vectors v0 = (1,1) and v1 = (1,0).
+To modify vectors v0 and v1 but keeping the same direction we need v0'(x1) = (x1,x1), v1'(x2) = (x2,0).
+Thus, to move t=1/2 to (0,0) we need to solve <b>a</b> and <b>b</b> for the following equation:<br>
+(1,1) = (2/8 - 3/4 + 1)*(0,0) + (1/8 - 2/4 + 1/2)*(a,a) + (-2/8 + 3/4)*(2,1) + (1/8 - 1/4)*(b,0)<br>
+=> (1,1) = (1/8)*(a,a) + (1/2)*(2,1) - (1/8)*(b,0)<br>
+=> (1,1) = (1/8)*(a,a) + (1,1/2) - (1/8)*(b,0)<br>
+=>
+  <br>1 = a/8 + 1/2 => a/8 = 1/2 => <b>a = 4</b>
+  <br>1 = a/8 + 1 - b/8 => b/8 = a/8 = 1/2 => <b>b = 4</b>
+<br>We can see vectors v0'=(4,4) and v1'=(4,0) in action by clicking the button "Do problem 2" (scaled by 50).
+<br><button type="button" onClick="doProblem2b()">Enlarge vectors by doubling</button>
+The vectors are doubled on each click, increasing the curvature.
+<br><button type="button" onClick="doProblem2c()">Invert</button>
+The vectors are inverted, and so the curve is drawn at "the other side" of the line between the points.
+<br><br><b>Problem 3:</b>
+<button type="button" onClick="doProblem3a()">1. P0 = P1</button>
+<button type="button" onClick="doProblem3b()">2. P0=P1, v0=v1=(0,0)</button>
+<button type="button" onClick="doProblem3c()">3. v0=v1=P1-P0</button>
+<br>Taking into account the Hermite formula:
+<br>P(t) = (2t³-3t²+1)P0 + (-2t³ + 3t²)P1 + (t³ - 2t² + t)v0 + (t³ - t²)v1
+<br><br>1. We get a loop starting and ending on the same point (P0=P1). In terms of the formula, we get:
+<br>P1(t) = (2t³ - 3t² + 1)P0 + (-2t³ + 3t²)P0 + (t³ - 2t² + t)v0 + (t³ - t²)v1
+<br>= (2t³-2t³ + 3t²-3t² + 1)P0 + (t³ - 2t² + t)v0 + (t³ - t²)v1
+<br>= P0 + (t³ - 2t² + t)v0 + (t³ - t²)v1
+<br><br>2. We get everything in a single point. In terms of the formula, we get:
+<br>P2(t) = (2t³ - 3t² + 1)P0 + (-2t³ + 3t²)P0 + (t³ - 2t² + t)*(0,0) + (t³ - t²)*(0,0)
+<br>= P0 + (t³ - 2t² + t)*(0,0) + (t³ - t²)*(0,0) = P0
+<br><br>3. We get a straight segment between P0 and P1. In terms of the formula, we get:
+<br>P3(t) = (2t³ - 3t² + 1)P0 + (-2t³ + 3t²)P1 + (t³ - 2t² + t)(P1-P0) + (t³ - t²)(P1-P0)
+<br>= (2t³ - 3t² + 1)P0 - (t³ - 2t² + t)P0 - (t³ - t²)P0 + + (-2t³ + 3t²)P1 + (t³ - 2t² + t)P1 + (t³ - t²)P1
+<br>= (-t + 1)P0 + (t)P1
+<br> Which is a linear equation.
+
+<script type="text/javascript">
+
+    /*
+    * Part of this code is based on:
+        * http://blogs.sitepoint.com/html5-canvas-draw-quadratic-curves/
+        * http://blogs.sitepoint.com/html5-canvas-draw-bezier-curves/
+    */
+
+    var canvas1, context1, points, myTransformation, style, drag = null, draggedPoint;
+
+    points = [{ x:50, y:50 },{ x:0, y:0 },{ x:100, y:50 },{ x:150, y:50 }];
+    points_orig = [{ x:50, y:50 },{ x:0, y:0 },{ x:100, y:50 },{ x:150, y:50 }];
+
+    function init() {
+
+        myTransformation = function(p){return p}; //Identity transform
+
+        // default styles
+        style = {
+            curve:	{ width: 6, color: "#333" },
+            line:	{ width: 3, color: "#C00" },
+            point: { radius: 10, width: 2, color: "#900", fill: "rgba(200,200,200,0.5)", arc1: 0, arc2: 2 * Math.PI }
+        }
+
+        // line style defaults
+        context1.lineCap = "round";
+        context1.lineJoin = "round";
+
+        context1.translate(canvas1.width/2,canvas1.height/2);
+
+        // event handlers (only canvas1)
+        canvas1.onmousedown = dragStart;
+        canvas1.onmousemove = dragging;
+        canvas1.onmouseup = canvas1.onmouseout = dragEnd;
+
+        drawCanvas();
+    }
+
+    function reset() {
+        points = [{ x:50, y:50 },{ x:0, y:0 },{ x:100, y:50 },{ x:150, y:50 }];
+        drawCanvas();
+    }
+
+    function doProblem2(a, b) {
+        points = [{ x:a*50, y:a*50 },{ x:0, y:0 },{ x:100, y:50 },{ x:100+b*50, y:50 }];
+        drawCanvas();
+    }
+
+    function doProblem2b() {
+        points[0].x *= 2;
+        points[0].y *= 2;
+        points[3].x *= 2;
+        drawCanvas();
+    }
+
+    function doProblem2c() {
+        points[0].x *= -1;
+        points[0].y *= -1;
+        points[3].x *= -1;
+        drawCanvas();
+    }
+
+    function doProblem3a() {
+        points[2].x = points[1].x;
+        points[2].y = points[1].y;
+        drawCanvas();
+    }
+
+    function doProblem3b() {
+        points[0].x = points[1].x;
+        points[0].y = points[1].y;
+        points[2].x = points[1].x;
+        points[2].y = points[1].y;
+        points[3].x = points[1].x;
+        points[3].y = points[1].y;
+        drawCanvas();
+    }
+
+    function doProblem3c() {
+        points[0].x = points[2].x;
+        points[0].y = points[2].y;
+        points[3].x = points[2].x - points[1].x + points[2].x;
+        points[3].y = points[2].y - points[1].y + points[2].y;
+        drawCanvas();
+    }
+
+    /**
+     Basic drawing methods
+     **/
+
+
+    // draw canvas
+    function drawCanvas() {
+        // Clear everything
+        //context1.clearRect(0, 0, canvas1.width, canvas1.height);  // Clear canvas
+        context1.clearRect(-canvas1.width/2, -canvas1.height/2, canvas1.width, canvas1.height);  // Clear canvas
+
+
+        // Background grids
+        drawGrid(context1,canvas1.width, canvas1.height); // Draw background grid
+
+        // Curve through points and vertices
+        drawCurve(context1, style, points); // Draw curve
+        drawVertices(context1, style, points); // Draw vertices as circles
+        drawHermite(context1, style, points);
+    }
+
+
+    // Draw a background grid
+    function drawGrid(myContext,bw,bh){
+        var delta = 50; // grid cell size
+
+        var half_width = bw/2;
+        var half_height = bh/2;
+        for (var x = -half_width; x <= half_width; x += delta) {
+            myContext.moveTo(x, -half_height);
+            myContext.lineTo(x, half_height);
+        }
+
+        for (var y = -half_height; y <= half_height; y += delta) {
+            myContext.moveTo(-half_width, y);
+            myContext.lineTo(half_width , y);
+        }
+
+        myContext.lineWidth = 1;
+        myContext.strokeStyle = "lightgray";
+        myContext.stroke();
+
+        myContext.strokeStyle = "black";
+        myContext.font = "12px Arial";
+        myContext.fillText("(0,0)",2,12);
+
+    }
+
+    // Draws a polygonal curve connecting the points, after applying the given transformation
+    function drawCurve(ctx, style, points, transformation) {
+        // The transformation is optional. If none provided, use identity transform
+        if (transformation===undefined) {
+            transformation = function(p){return p}; //Identity transform
+        }
+
+        // Draw curve
+        ctx.lineWidth = style.curve.width;
+        ctx.strokeStyle = style.curve.color;
+        ctx.beginPath();
+        var firstPoint = transformation(points[0]);
+        var currentPoint;
+        ctx.moveTo(firstPoint.x, firstPoint.y);
+        for (var i = 0; i < points.length; i++) {
+            currentPoint =  transformation(points[i]);
+            ctx.lineTo(currentPoint.x, currentPoint.y);
+            ctx.moveTo(currentPoint.x, currentPoint.y);
+        }
+        ctx.stroke();
+    }
+
+    // Draw circles around vertices to facilitate drag and drop
+    function drawVertices (ctx, style, points) {
+        for (var i = 0; i < points.length; i++) {
+            var p = points[i];
+            ctx.lineWidth = style.point.width;
+            ctx.strokeStyle = style.point.color;
+            ctx.fillStyle = style.point.fill;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, style.point.radius, style.point.arc1, style.point.arc2, true);
+            ctx.fill();
+            ctx.stroke();
+        }
+    }
+
+    function drawHermite (ctx, style, points) {
+        var n = 200;
+        var ps = makeHermite(n, points);
+
+        ctx.lineWidth = style.line.width;
+        ctx.strokeStyle = style.line.color;
+        ctx.beginPath();
+
+        ctx.moveTo(ps[0].x, ps[0].y);
+        for(var i = 1; i < ps.length; i++) {
+            ctx.lineTo(ps[i].x, ps[i].y);
+            ctx.moveTo(ps[i].x, ps[i].y);
+        }
+        ctx.stroke();
+
+        var t = n/2;
+        var p = ps[t];
+        ctx.lineWidth = style.point.width;
+        ctx.strokeStyle = "blue";
+        ctx.fillStyle = style.point.fill;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, style.point.radius, style.point.arc1, style.point.arc2, true);
+        ctx.fill();
+        ctx.stroke();
+    }
+
+    /**
+     Methods to allow dragging transformedPoints around
+     **/
+
+    function fromCanvasToPointSpace(canvasPoint) {
+        return {x: canvasPoint.x - canvas1.width/2 , y: canvasPoint.y - canvas1.height/2};
+    }
+
+    // start dragging
+    function dragStart(e) {
+        e = mousePos(e);
+        // Reverse translation to canvas1
+        var pos = fromCanvasToPointSpace(e);
+        var dx, dy;
+        for (var i=0; i<points.length;i++) {
+            dx = points[i].x - pos.x;
+            dy = points[i].y - pos.y;
+            if ((dx * dx) + (dy * dy) < style.point.radius * style.point.radius) {
+                drag = i;
+                draggedPoint = pos;
+                canvas1.style.cursor = "move";
+                return;
+            }
+        }
+    }
+
+    // dragging
+    function dragging(e) {
+        if (drag!=null) {
+            e = mousePos(e);
+            // Reverse translation to canvas1
+            var pos = fromCanvasToPointSpace(e);
+            points[drag].x += pos.x - draggedPoint.x;
+            points[drag].y += pos.y - draggedPoint.y;
+            draggedPoint = pos;
+            drawCanvas();
+        }
+    }
+
+    // end dragging
+    function dragEnd(e) {
+        drag = null;
+        canvas1.style.cursor = "default";
+        drawCanvas();
+    }
+
+    // event parser
+    function mousePos(event) {
+        event = (event ? event : window.event);
+        return {
+            x: event.pageX - canvas1.offsetLeft,
+            y: event.pageY - canvas1.offsetTop
+        }
+    }
+
+    /**
+     * Start ("main method")
+     */
+
+    // Assign canvas and context variables
+    canvas1 = document.getElementById("canvas1");
+    context1 = canvas1.getContext("2d");
+
+    init();
+
+    /**
+     * Auxiliary functions
+     */
+
+     function hermite(t, ps, vs) {
+         var newP = {
+             x: (2*math.pow(t,3) - 3*math.pow(t,2) + 1)*ps[0].x +
+             (math.pow(t,3) - 2*math.pow(t,2) + t)*vs[0].x +
+             (-2*math.pow(t,3) + 3*math.pow(t,2))*ps[1].x +
+             (math.pow(t,3) - math.pow(t,2))*vs[1].x,
+             y: (2*math.pow(t,3) - 3*math.pow(t,2) + 1)*ps[0].y +
+             (math.pow(t,3) - 2*math.pow(t,2) + t)*vs[0].y +
+             (-2*math.pow(t,3) + 3*math.pow(t,2))*ps[1].y +
+             (math.pow(t,3) - math.pow(t,2))*vs[1].y
+         }
+
+         return newP;
+     }
+
+     function makeHermite(nt, points) {
+         var ps = [];
+         ps.push(points[1]);
+         ps.push(points[2]);
+
+         var vs = [];
+         var v1 = {
+             x: points[0].x - points[1].x,
+             y: points[0].y - points[1].y
+         }
+         var v2 = {
+             x: points[3].x - points[2].x,
+             y: points[3].y - points[2].y
+         }
+
+         vs.push(v1);
+         vs.push(v2);
+
+         var res = [];
+         for(var i = 0; i < nt; i++) {
+             res.push(hermite(i/nt, ps, vs));
+         }
+
+         return res;
+     }
+
+
+</script>
+</body>
+</html>
